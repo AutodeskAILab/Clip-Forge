@@ -1,0 +1,5 @@
+exps/*
+.ipynb_checkpoints/
+nohup.out
+*pyc
+__pycache__ 
