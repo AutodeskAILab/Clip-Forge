@@ -131,12 +131,15 @@ def get_condition_embeddings(args, model, clip_model, dataloader, times=5):
                 query_points, occ = data['points'], data['points.occ']
                 data_index =  data['idx'].to(args.device)
                 image = data['images'].type(torch.FloatTensor).to(args.device)
-                data_input = data['voxels'].type(torch.FloatTensor).to(args.device)
-
+               
                 query_points = query_points.type(torch.FloatTensor).to(args.device)
                 occ = occ.type(torch.FloatTensor).to(args.device)
 
-                         
+                if args.input_type == "Voxel":
+                    data_input = data['voxels'].type(torch.FloatTensor).to(args.device)
+                elif args.input_type == "Pointcloud":
+                    data_input = data['pc_org'].type(torch.FloatTensor).to(args.device).transpose(-1, 1)
+            
                 shape_emb = model.encoder(data_input)
                 
                 image_features = clip_model.encode_image(image)
@@ -177,10 +180,14 @@ def generate_on_query_text(args, clip_model, autoencoder, latent_flow_model):
             decoder_embs = latent_flow_model.sample(num_figs, noise=noise, cond_inputs=text_features.repeat(num_figs,1))
 
             out = autoencoder.decoding(decoder_embs, query_points)
-
-            voxels_out = (out.view(num_figs, voxel_size, voxel_size, voxel_size) > args.threshold).detach().cpu().numpy()
-            visualization.multiple_plot_voxel(voxels_out, save_loc=save_loc +"{}_text_query.png".format(text_in))
-
+            
+            if args.output_type == "Implicit":
+                voxels_out = (out.view(num_figs, voxel_size, voxel_size, voxel_size) > args.threshold).detach().cpu().numpy()
+                visualization.multiple_plot_voxel(voxels_out, save_loc=save_loc +"{}_text_query.png".format(text_in))
+            elif args.output_type == "Pointcloud":
+                pred = out.detach().cpu().numpy()
+                visualization.multiple_plot(pred,  save_loc=save_loc +"{}_text_query.png".format(text_in))
+                
     latent_flow_model.train()
     
         

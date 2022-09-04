@@ -50,6 +50,17 @@ python train_autoencoder.py --dataset_path /path/to/dataset/
 python train_post_clip.py  --dataset_path /path/to/dataset/ --checkpoint best_iou  --num_views 1 --text_query "a chair" "a limo" "a jet plane"
 ```
 
+For Pointcloud code, please use the following code: 
+
+```
+## Stage 1
+python train_autoencoder.py --dataset_path /path/to/dataset/ --input_type Pointcloud --output_type Pointcloud 
+ 
+## Stage 2
+python train_post_clip.py  --dataset_path /path/to/dataset/ --input_type Pointcloud --output_type Pointcloud  --checkpoint best  --num_views 1 --text_query "a chair" "a limo" "a jet plane"
+```
+
+
 ## Inference
 
 To generate shape renderings based on text query:
@@ -76,7 +87,7 @@ To get the optimal results use different threshold values as controlled by the a
 
 ## Releasing Soon 
 
-- [ ] Pointcloud code 
+- [ ] Pointcloud code --> semi done (need to test code)
 - [ ] Pretrained models for pointcloud experiments 
 
 

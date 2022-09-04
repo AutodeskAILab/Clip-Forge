@@ -32,7 +32,7 @@ def experiment_name(args):
 
     from datetime import datetime
 
-    tokens = ["Autoencoder", args.dataset_name, args.input_type, args.output_type, args.encoder_type, args.decoder_type, args.emb_dims,  args.reconstruct_loss_type, args.last_feature_transform]
+    tokens = ["Autoencoder", args.dataset_name, args.input_type, args.output_type, args.emb_dims, args.last_feature_transform]
            
     if args.categories != None:
         for i in args.categories:
@@ -128,15 +128,23 @@ def visualization_model(model, args, test_dataloader, name_info):
     test_loader = iter(test_dataloader)
     data = next(test_loader)
     
-    data_input = data['voxels'].type(torch.FloatTensor).to(args.device)
+    
+    if args.input_type == "Voxel":
+        data_input = data['voxels'].type(torch.FloatTensor).to(args.device)
+    elif args.input_type == "Pointcloud":
+        data_input = data['pc_org'].type(torch.FloatTensor).to(args.device).transpose(-1, 1)
 
-    voxel_32 = data['voxels'].type(torch.FloatTensor).to(args.device)
-    voxel_size = 32
-    shape = (voxel_size, voxel_size, voxel_size)
-    p = 1.1 * visualization.make_3d_grid([-0.5] * 3, [+0.5] * 3, shape).type(torch.FloatTensor).to(args.device)
-    query_points = p.expand(args.test_batch_size, *p.size())
-
+    if args.output_type == "Implicit":
+        voxel_32 = data['voxels'].type(torch.FloatTensor).to(args.device)
+        voxel_size = 32
+        shape = (voxel_size, voxel_size, voxel_size)
+        p = 1.1 * visualization.make_3d_grid([-0.5] * 3, [+0.5] * 3, shape).type(torch.FloatTensor).to(args.device)
+        query_points = p.expand(args.test_batch_size, *p.size())
+    elif args.output_type == "Pointcloud":
+        query_points = None
+        gt = data['pc_org'].type(torch.FloatTensor).to(args.device) 
                 
+   
     with torch.no_grad():
         pred, decoder_embs = model(data_input, query_points)
         
@@ -144,11 +152,14 @@ def visualization_model(model, args, test_dataloader, name_info):
             save_loc = args.vis_dir + "/" + str(name_info) + "_"  
         else:
             save_loc = args.vis_dir + "/"
-
-        voxels_out = (pred[0].view(voxel_size, voxel_size, voxel_size) > args.threshold).detach().cpu().numpy()
-        real = voxel_32[0].detach().cpu().numpy()
-        visualization.multiple_plot_voxel([real, voxels_out], save_loc=save_loc + "real_pred.png")
-        #visualization.save_mesh(voxels_out, out_file=save_loc + "pred.obj")
+        
+        if args.output_type == "Implicit":
+            voxels_out = (pred[0].view(voxel_size, voxel_size, voxel_size) > args.threshold).detach().cpu().numpy()
+            real = voxel_32[0].detach().cpu().numpy()
+            visualization.multiple_plot_voxel([real, voxels_out], save_loc=save_loc + "real_pred.png")
+            #visualization.save_mesh(voxels_out, out_file=save_loc + "pred.obj")
+        elif args.output_type == "Pointcloud":
+            visualization.plot_real_pred(gt.detach().cpu().numpy(), pred.detach().cpu().numpy(), 1, save_loc=save_loc + "real_pred.png") 
         
 ############################## visualization #################################################
        
@@ -183,6 +194,38 @@ def val_one_epoch_iou(model, args, test_dataloader, epoch):
     loss_reconstruction = np.mean(loss_reconstruction)
     logging.info("[Val]  Epoch {} IOU Loss: {}".format(epoch, loss_reconstruction))
     return loss_reconstruction  
+
+def val_one_epoch(model, args, test_dataloader, epoch):
+    model.eval()
+    loss_reconstruction = []
+
+    with torch.no_grad():
+        for data in test_dataloader:
+            
+            if args.input_type == "Voxel":
+                data_input = data['voxels'].type(torch.FloatTensor).to(args.device)
+            elif args.input_type == "Pointcloud":
+                data_input = data['pc_org'].type(torch.FloatTensor).to(args.device).transpose(-1, 1)
+
+            if args.output_type == "Implicit":
+                query_points, occ = data['points'], data['points.occ']
+                query_points = query_points.type(torch.FloatTensor).to(args.device)
+                occ = occ.type(torch.FloatTensor).to(args.device)
+                gt = occ 
+            elif args.output_type == "Pointcloud":
+                query_points = None
+                gt = data['pc_org'].type(torch.FloatTensor).to(args.device) 
+            
+            pred, _ = model(data_input, query_points)
+            loss_reconstuct = model.reconstruction_loss(pred, gt)
+
+            loss_reconstruction.append(loss_reconstuct.item())
+        
+    loss_reconstruction = np.asarray(loss_reconstruction)
+    loss_reconstruction = np.mean(loss_reconstruction)
+    logging.info("[Val]  Epoch {} Loss: {}".format(epoch, loss_reconstruction))
+    return loss_reconstruction  
+
 ############################## validation #################################################
 
 ############################## training #################################################
@@ -197,16 +240,23 @@ def train_one_epoch(model, args, train_dataloader, optimizer, scheduler, loss_me
 
         data_index =  data['idx'].to(args.device)
         
-        data_input = data['voxels'].type(torch.FloatTensor).to(args.device)
-
-        query_points, occ = data['points'], data['points.occ']
-        query_points = query_points.type(torch.FloatTensor).to(args.device)
-        occ = occ.type(torch.FloatTensor).to(args.device)
-       
-          
+        if args.input_type == "Voxel":
+            data_input = data['voxels'].type(torch.FloatTensor).to(args.device)
+        elif args.input_type == "Pointcloud":
+            data_input = data['pc_org'].type(torch.FloatTensor).to(args.device).transpose(-1, 1)
+           
+        if args.output_type == "Implicit":
+            query_points, occ = data['points'], data['points.occ']
+            query_points = query_points.type(torch.FloatTensor).to(args.device)
+            occ = occ.type(torch.FloatTensor).to(args.device)
+            gt = occ 
+        elif args.output_type == "Pointcloud":
+            query_points = None
+            gt = data['pc_org'].type(torch.FloatTensor).to(args.device) 
+        
         pred, shape_embs = model(data_input, query_points)
 
-        loss_reconstuct = model.reconstruction_loss(pred, occ)
+        loss_reconstuct = model.reconstruction_loss(pred, gt)
                    
         loss = loss_reconstuct 
         loss.backward()
@@ -238,7 +288,7 @@ def parsing(mode="args"):
     ### Dataset details
     parser.add_argument('--dataset_path', type=str, default=None, help='Dataset path')
     parser.add_argument('--dataset_name', type=str, default="Shapenet", help='Dataset path')
-    parser.add_argument("--num_points", type=int, default=2048, help='Number of points')
+    parser.add_argument("--num_points", type=int, default=2025, help='Number of points')
     parser.add_argument("--num_sdf_points", type=int, default=5000, help='Number of points')
     parser.add_argument("--test_num_sdf_points", type=int, default=30000, help='Number of points')
     parser.add_argument('--categories',   nargs='+', default=None, metavar='N')
@@ -334,9 +384,12 @@ def main():
         full_test_dataloader, total_shapes_test  = get_dataloader(args, split="test")
         logging.info("Test Dataset size: {}".format(total_shapes_test))
         
-        test_iou = val_one_epoch_iou(net, args, full_test_dataloader, 0)
-        
-        logging.info("Test iou{}".format(test_iou))
+        if args.output_type == "Implicit":
+            test_iou = val_one_epoch_iou(net, args, full_test_dataloader, 0)
+            logging.info("Test iou {}".format(test_iou))
+        elif  args.output_type == "Pointcloud":
+            test_val = val_one_epoch(net, args, full_test_dataloader, 0)
+            logging.info("Test val loss {}".format(test_val))
         
     else:
         optimizer = helper.get_optimizer_model(args.optimizer, net, lr=args.lr)
@@ -351,7 +404,7 @@ def main():
             optimizer.load_state_dict(checkpoint['optimizer'])
             scheduler.load_state_dict(checkpoint['scheduler'])
             start_epoch = checkpoint['current_epoch']
-            print(start_epoch)
+            
 
         best_loss = 100000    
         best_iou = 0
@@ -365,14 +418,21 @@ def main():
     
             if (epoch + 1) % 5 == True:
                 visualization_model(net, args, test_dataloader, epoch)
-                        
-            val_iou = val_one_epoch_iou(net, args, test_dataloader, epoch)
-            if  best_iou < val_iou:
-                best_iou = val_iou
-                filename = '{}.pt'.format("best_iou")
-                logging.info("Saving Model........{}".format(filename))
-                helper.save_checkpoint(osp.join(args.checkpoint_dir, filename), net, args, optimizer, scheduler, epoch)
-
+            
+            if args.output_type == "Implicit":
+                val_iou = val_one_epoch_iou(net, args, test_dataloader, epoch)
+                if  best_iou < val_iou:
+                    best_iou = val_iou
+                    filename = '{}.pt'.format("best_iou")
+                    logging.info("Saving Model........{}".format(filename))
+                    helper.save_checkpoint(osp.join(args.checkpoint_dir, filename), net, args, optimizer, scheduler, epoch)
+            elif args.output_type == "Pointcloud":
+                val_loss = val_one_epoch(net, args, test_dataloader, epoch)
+                if  best_loss > val_loss:
+                    best_loss = val_loss
+                    filename = '{}.pt'.format("best")
+                    logging.info("Saving Model........{}".format(filename))
+                    helper.save_checkpoint(osp.join(args.checkpoint_dir, filename), net, args, optimizer, scheduler, epoch)
 
             filename = '{}.pt'.format("last")
             logging.info("Saving Model........{}".format(filename))

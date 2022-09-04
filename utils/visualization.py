@@ -231,3 +231,36 @@ def multiple_plot_voxel(batch_data_points, save_loc=None, transpose=True):
         return
     plt.show()
     
+def multiple_plot(batch_data_points, lmit=0.6, save_loc=None):
+    
+    my_colors = {0:'orange',1:'red',2:'green',3:'blue',4:'grey',5:'gold',6:'violet',7:'pink',8:'navy',9:'black'}
+
+    fig = plt.figure(figsize=(40,10))
+
+    for i in range(len(batch_data_points)):
+        plt_num = "1" + str(len(batch_data_points)) +str(i+1)
+        #print(plt_num)
+        #ax = fig.gca(projection='3d')
+        ax = fig.add_subplot(plt_num, projection='3d')
+        data_points = batch_data_points[i]
+        
+        for i, _ in enumerate(data_points):
+            ax.scatter(data_points[i,2], data_points[i,0], data_points[i,1],  color = 'black')
+            
+            ax.set_xlim([-1 * lmit, lmit])
+            ax.set_ylim([-1 * lmit, lmit])
+            ax.set_zlim([-1 * lmit, lmit])
+            #ax.view_init(-30, 45)
+            ax.grid(False)
+
+            # Hide axes ticks
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_zticks([])
+        #ax.view_init(-30, 45)
+    if save_loc != None:
+        plt.savefig(save_loc)
+        plt.close()
+        return
+    plt.show()    
+    
